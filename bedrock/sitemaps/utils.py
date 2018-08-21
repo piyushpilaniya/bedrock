@@ -15,6 +15,7 @@ from django.test.client import Client
 
 from mock import patch
 
+from bedrock.grants import grants_db
 from bedrock.releasenotes.models import ProductRelease
 from bedrock.security.models import SecurityAdvisory
 
@@ -42,6 +43,14 @@ SEC_KNOWN_VULNS = [
     '/security/known-vulnerabilities/seamonkey-1.0/',
     '/security/known-vulnerabilities/mozilla-suite/',
 ]
+
+
+def get_grants_urls():
+    urls = {}
+    for grant in grants_db.GRANTS:
+        urls['/grants/{}.html'.format(grant.url)] = ['en-US']
+
+    return urls
 
 
 def get_security_urls():
@@ -94,6 +103,8 @@ def get_static_urls():
             r'.*//$',
             r'^media/',
             r'^robots\.txt$',
+            # Redirects in en-US. Added via EXTRA_INDEX_URLS
+            r'firefox-klar/$',
         ]
     ]
 
@@ -102,42 +113,43 @@ def get_static_urls():
 
     # get_resolver is an undocumented but convenient function.
     # Try to retrieve all valid URLs on this site.
-    for key, value in urlresolvers.get_resolver(None).reverse_dict.iteritems():
-        path = value[0][0][0]
-        # Exclude pages that we don't want be indexed by search engines.
-        # Some other URLs are also unnecessary for the sitemap.
-        if any(exclude.search(path) for exclude in excludes):
-            continue
-
-        path_prefix = path.split('/', 2)[0]
-        nonlocale = path_prefix in settings.SUPPORTED_NONLOCALES
-        path = '/%s' % path
-        if nonlocale:
-            locales = []
-        else:
-            with patch('lib.l10n_utils.django_render') as render:
-                render.return_value = HttpResponse()
-                client.get('/' + settings.LANGUAGE_CODE + path)
-
-            # Exclude urls that did not call render
-            if not render.called:
+    for key, values in urlresolvers.get_resolver(None).reverse_dict.iterlists():
+        for value in values:
+            path = value[0][0][0]
+            # Exclude pages that we don't want be indexed by search engines.
+            # Some other URLs are also unnecessary for the sitemap.
+            if any(exclude.search(path) for exclude in excludes):
                 continue
 
-            locales = render.call_args[0][2]['translations'].keys()
+            path_prefix = path.split('/', 2)[0]
+            nonlocale = path_prefix in settings.SUPPORTED_NONLOCALES
+            path = '/%s' % path
+            if nonlocale:
+                locales = []
+            else:
+                with patch('lib.l10n_utils.django_render') as render:
+                    render.return_value = HttpResponse()
+                    client.get('/' + settings.LANGUAGE_CODE + path)
 
-            # zh-CN is a redirect on the homepage
-            if path == '/':
-                locales.remove('zh-CN')
+                # Exclude urls that did not call render
+                if not render.called:
+                    continue
 
-            # Firefox Focus has a different URL in German
-            if path == '/privacy/firefox-focus/':
-                locales.remove('de')
+                locales = render.call_args[0][2]['translations'].keys()
 
-            # just remove any locales not in our prod list
-            locales = list(set(locales).intersection(settings.PROD_LANGUAGES))
+                # zh-CN is a redirect on the homepage
+                if path == '/':
+                    locales.remove('zh-CN')
 
-        if path not in urls:
-            urls[path] = locales
+                # Firefox Focus has a different URL in German
+                if path == '/privacy/firefox-focus/':
+                    locales.remove('de')
+
+                # just remove any locales not in our prod list
+                locales = list(set(locales).intersection(settings.PROD_LANGUAGES))
+
+            if path not in urls:
+                urls[path] = locales
 
     return urls
 
@@ -146,6 +158,7 @@ def update_sitemaps():
     urls = get_static_urls()
     urls.update(get_release_notes_urls())
     urls.update(get_security_urls())
+    urls.update(get_grants_urls())
     # Output static files
     output_json(urls)
     output_xml(urls)
