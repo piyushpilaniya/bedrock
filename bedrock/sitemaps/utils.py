@@ -80,14 +80,18 @@ def get_release_notes_urls():
 
         try:
             rel_path = release.get_absolute_url()
+            req_path = release.get_sysreq_url()
         except urlresolvers.NoReverseMatch:
             continue
 
         # strip "/en-US" off the front
         if rel_path.startswith('/en-US'):
             rel_path = rel_path[6:]
+        if req_path.startswith('/en-US'):
+            req_path = req_path[6:]
 
         urls[rel_path] = ['en-US']
+        urls[req_path] = ['en-US']
 
     return urls
 
